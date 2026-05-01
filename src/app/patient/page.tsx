@@ -2,17 +2,20 @@
 
 import React, { useState, useEffect } from 'react';
 import { LifestyleLog, calculateLifestyleScore } from '@/lib/ckdLogic';
-import { HabitTracker } from '@/components/HabitTracker';
+import { PatientHabitTracker } from '@/components/PatientHabitTracker';
 import { AnimatedScore } from '@/components/AnimatedScore';
-import { UserCircle, Award, TrendingUp, Calendar, ArrowLeft } from 'lucide-react';
+import { UserCircle, Award, TrendingUp, Calendar, ArrowLeft, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function PatientPortal() {
+  // Using local state to manage logs completely without requiring login or APIs
   const [history, setHistory] = useState<LifestyleLog[]>([]);
   const [score, setScore] = useState(50);
   const [streak, setStreak] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [hasHighBP, setHasHighBP] = useState(false);
 
   useEffect(() => {
     // Recalculate score whenever history changes
@@ -22,15 +25,31 @@ export default function PatientPortal() {
     // Calculate simple streak (consecutive days logged)
     setStreak(history.length);
 
-    // Trigger basic animation effect for logging
+    // Check for high BP in the latest log
     if (history.length > 0) {
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 2000);
+      const latest = history[history.length - 1];
+      if (latest.systolicBP > 140 || latest.diastolicBP > 90) {
+        setHasHighBP(true);
+      } else {
+        setHasHighBP(false);
+      }
     }
   }, [history]);
 
+  // Format history for recharts
+  const chartData = history.map((log, index) => ({
+    name: `Day ${index + 1}`,
+    systolic: log.systolicBP,
+    diastolic: log.diastolicBP,
+    water: log.waterIntake * 10, // scale for visual comparison
+    exercise: log.exerciseMinutes
+  }));
+
   const handleLogSubmit = (log: LifestyleLog) => {
+    // Append to local state array
     setHistory(prev => [...prev, log]);
+    setShowConfetti(true);
+    setTimeout(() => setShowConfetti(false), 2000);
   };
 
   return (
@@ -54,6 +73,36 @@ export default function PatientPortal() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 mt-8">
+        {hasHighBP && (
+          <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-red-500" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700 font-medium">
+                  High Blood Pressure Alert! Your latest reading is above target (140/90). This negatively impacts your Kidney Health Score. Please monitor closely and consult your clinician.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {score < 60 && (
+          <div className="mb-6 bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg shadow-sm">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-orange-500" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-orange-700 font-medium">
+                  <strong>Disclaimer:</strong> Your Kidney Health Score is currently low. This score is an educational tool based on your lifestyle entries. Please consult a healthcare professional for personalized medical advice.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-8">
           
           {/* Left Column: Health Score & Achievements */}
@@ -101,6 +150,33 @@ export default function PatientPortal() {
                 </div>
               </div>
             </div>
+
+            {/* Trend Chart */}
+            {history.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-indigo-50">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
+                  Lifestyle & BP Trends
+                </h3>
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                      <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                      <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                        itemStyle={{ fontSize: '12px' }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '10px' }} />
+                      <Line yAxisId="left" type="monotone" dataKey="systolic" name="Systolic BP" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line yAxisId="left" type="monotone" dataKey="diastolic" name="Diastolic BP" stroke="#f87171" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line yAxisId="right" type="monotone" dataKey="exercise" name="Exercise (m)" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column: Habit Tracker */}
@@ -112,7 +188,7 @@ export default function PatientPortal() {
               <p className="text-indigo-100 text-sm">Small daily habits compound into massive health benefits over time.</p>
             </div>
             
-            <HabitTracker onLogSubmit={handleLogSubmit} />
+            <PatientHabitTracker onLogSubmit={handleLogSubmit} />
           </div>
 
         </div>
